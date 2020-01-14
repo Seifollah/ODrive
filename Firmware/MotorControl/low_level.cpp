@@ -23,7 +23,7 @@
 
 /* Private defines -----------------------------------------------------------*/
 
-// #define DEBUG_PRINT
+#define DEBUG_PRINT
 
 /* Private macros ------------------------------------------------------------*/
 /* Private typedef -----------------------------------------------------------*/
@@ -38,7 +38,7 @@ float vbus_voltage = 12.0f;
 bool brake_resistor_armed = false;
 /* Private constant data -----------------------------------------------------*/
 static const GPIO_TypeDef* GPIOs_to_samp[] = { GPIOA, GPIOB, GPIOC };
-static const int num_GPIO = sizeof(GPIOs_to_samp) / sizeof(GPIOs_to_samp[0]); 
+static const int num_GPIO = sizeof(GPIOs_to_samp) / sizeof(GPIOs_to_samp[0]);
 /* Private variables ---------------------------------------------------------*/
 
 // Two motors, sampling port A,B,C (coherent with current meas timing)
@@ -63,7 +63,7 @@ static uint16_t GPIO_port_samples [2][num_GPIO];
 *   Brake resistor PWM:
 *     Timer2.CCR3 (counter compare register 3)
 *     Timer2.CCR4 (counter compare register 4)
-* 
+*
 * The following assumptions are made:
 *   - The hardware operates as described in the datasheet:
 *     http://www.st.com/content/ccc/resource/technical/document/reference_manual/3d/6d/5a/66/b4/99/40/d4/DM00031020.pdf/files/DM00031020.pdf/jcr:content/translations/en.DM00031020.pdf
@@ -554,13 +554,13 @@ void pwm_trig_adc_cb(ADC_HandleTypeDef* hadc, bool injected) {
 }
 
 void tim_update_cb(TIM_HandleTypeDef* htim) {
-    
+
     // If the corresponding timer is counting up, we just sampled in SVM vector 0, i.e. real current
     // If we are counting down, we just sampled in SVM vector 7, with zero current
     bool counting_down = htim->Instance->CR1 & TIM_CR1_DIR;
     if (counting_down)
         return;
-    
+
     int sample_ch;
     Axis* axis;
     if (htim == &htim1) {
@@ -681,12 +681,17 @@ void pwm_in_init() {
 }
 
 //TODO: These expressions have integer division by 1MHz, so it will be incorrect for clock speeds of not-integer MHz
-#define TIM_2_5_CLOCK_HZ        TIM_APB1_CLOCK_HZ
+#define TIM_2_5_CLOCK_HZ           TIM_APB1_CLOCK_HZ
 #define PWM_MIN_HIGH_TIME          ((TIM_2_5_CLOCK_HZ / 1000000UL) * 1000UL) // 1ms high is considered full reverse
 #define PWM_MAX_HIGH_TIME          ((TIM_2_5_CLOCK_HZ / 1000000UL) * 2000UL) // 2ms high is considered full forward
 #define PWM_MIN_LEGAL_HIGH_TIME    ((TIM_2_5_CLOCK_HZ / 1000000UL) * 500UL) // ignore high periods shorter than 0.5ms
 #define PWM_MAX_LEGAL_HIGH_TIME    ((TIM_2_5_CLOCK_HZ / 1000000UL) * 2500UL) // ignore high periods longer than 2.5ms
-#define PWM_INVERT_INPUT        false
+#define PWM_INVERT_INPUT           false
+// //@seif define teh deadzone limits
+// #define PWM_MAX_DEAD_ZONE (PWM_MIN_HIGH_TIME + PWM_MAX_HIGH_TIME) *0.55    // around 1600ms
+// #define PWM_MIN_DEAD_ZONE (PWM_MIN_HIGH_TIME + PWM_MAX_HIGH_TIME) *0.45    // around 1400ms
+
+
 
 void handle_pulse(int gpio_num, uint32_t high_time) {
     if (high_time < PWM_MIN_LEGAL_HIGH_TIME || high_time > PWM_MAX_LEGAL_HIGH_TIME)
@@ -696,15 +701,40 @@ void handle_pulse(int gpio_num, uint32_t high_time) {
         high_time = PWM_MIN_HIGH_TIME;
     if (high_time > PWM_MAX_HIGH_TIME)
         high_time = PWM_MAX_HIGH_TIME;
-    float fraction = (float)(high_time - PWM_MIN_HIGH_TIME) / (float)(PWM_MAX_HIGH_TIME - PWM_MIN_HIGH_TIME);
-    float value = board_config.pwm_mappings[gpio_num - 1].min +
-                  (fraction * (board_config.pwm_mappings[gpio_num - 1].max - board_config.pwm_mappings[gpio_num - 1].min));
+
+    /*
+    @seif make a dead zone and linear response of the pwm input
+    */
+    float x_cordinate = (2.f*high_time) - (PWM_MAX_HIGH_TIME+PWM_MIN_HIGH_TIME);
+    float y_cordinate=0;
+    float max_x_cordinate=(PWM_MAX_HIGH_TIME-PWM_MIN_HIGH_TIME);
+    float dead_zone = max_x_cordinate*0.1f;//5% of dead PWM_DEAD_ZONE
+    float ap=board_config.pwm_mappings[gpio_num - 1].max/(max_x_cordinate-dead_zone);
+    float an=-(board_config.pwm_mappings[gpio_num - 1].min)/(max_x_cordinate-dead_zone);
+    /*
+    @seif  find the y_cordinate
+    */
+    if((x_cordinate>=-dead_zone) && (x_cordinate<=dead_zone))
+      {
+      y_cordinate=0;
+      }
+    else
+      {
+      if(x_cordinate>dead_zone)
+         {
+         y_cordinate=ap*(x_cordinate-dead_zone);
+         }
+       else//(x_cordinate<-dead_zone)
+         {
+         y_cordinate=an*(x_cordinate+dead_zone);
+         }
+      }
 
     Endpoint* endpoint = get_endpoint(board_config.pwm_mappings[gpio_num - 1].endpoint);
     if (!endpoint)
         return;
 
-    endpoint->set_from_float(value);
+    endpoint->set_from_float(y_cordinate);
 }
 
 void pwm_in_cb(int channel, uint32_t timestamp) {
