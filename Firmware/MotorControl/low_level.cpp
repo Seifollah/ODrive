@@ -687,10 +687,6 @@ void pwm_in_init() {
 #define PWM_MIN_LEGAL_HIGH_TIME    ((TIM_2_5_CLOCK_HZ / 1000000UL) * 500UL) // ignore high periods shorter than 0.5ms
 #define PWM_MAX_LEGAL_HIGH_TIME    ((TIM_2_5_CLOCK_HZ / 1000000UL) * 2500UL) // ignore high periods longer than 2.5ms
 #define PWM_INVERT_INPUT           false
-// //@seif define teh deadzone limits
-// #define PWM_MAX_DEAD_ZONE (PWM_MIN_HIGH_TIME + PWM_MAX_HIGH_TIME) *0.55    // around 1600ms
-// #define PWM_MIN_DEAD_ZONE (PWM_MIN_HIGH_TIME + PWM_MAX_HIGH_TIME) *0.45    // around 1400ms
-
 
 
 void handle_pulse(int gpio_num, uint32_t high_time) {
@@ -708,27 +704,60 @@ void handle_pulse(int gpio_num, uint32_t high_time) {
     float x_cordinate = (2.f*high_time) - (PWM_MAX_HIGH_TIME+PWM_MIN_HIGH_TIME);
     float y_cordinate=0;
     float max_x_cordinate=(PWM_MAX_HIGH_TIME-PWM_MIN_HIGH_TIME);
-    float dead_zone = max_x_cordinate*0.1f;//5% of dead PWM_DEAD_ZONE
-    float ap=board_config.pwm_mappings[gpio_num - 1].max/(max_x_cordinate-dead_zone);
-    float an=-(board_config.pwm_mappings[gpio_num - 1].min)/(max_x_cordinate-dead_zone);
+    float dead_zone = max_x_cordinate*0.05f;//5% of dead PWM_DEAD_ZONE
     /*
     @seif  find the y_cordinate
     */
-    if((x_cordinate>=-dead_zone) && (x_cordinate<=dead_zone))
-      {
-      y_cordinate=0;
-      }
-    else
-      {
-      if(x_cordinate>dead_zone)
-         {
-         y_cordinate=ap*(x_cordinate-dead_zone);
-         }
-       else//(x_cordinate<-dead_zone)
-         {
-         y_cordinate=an*(x_cordinate+dead_zone);
-         }
-      }
+
+    /*
+    START : linear answer with a deadzone
+    */
+    // float ap=board_config.pwm_mappings[gpio_num - 1].max/(max_x_cordinate-dead_zone);
+    // float an=-(board_config.pwm_mappings[gpio_num - 1].min)/(max_x_cordinate-dead_zone);
+    //
+    // if((x_cordinate>=-dead_zone) && (x_cordinate<=dead_zone))
+    //   {
+    //   y_cordinate=0;
+    //   }
+    // else
+    //   {
+    //   if(x_cordinate>dead_zone)
+    //      {
+    //      y_cordinate=ap*(x_cordinate-dead_zone);
+    //      }
+    //    else//(x_cordinate<-dead_zone)
+    //      {
+    //      y_cordinate=an*(x_cordinate+dead_zone);
+    //      }
+    //   }
+   /*
+   END : linear answer with a deadzone
+   */
+
+   /*
+   START : Exponential answer with OHM constant
+   */
+   //y=[1/(exp(a)-1)]X[exp(a*x)-1]
+   #define OHM 4
+   //unit x and b
+   float unit_x=fabsf(x_cordinate)/(float)max_x_cordinate;
+   float unit_y=(float)(1/(exp(OHM)-1))*(float)(exp(OHM*unit_x)-1);
+
+   if(x_cordinate<0)
+     {
+     unit_y=-unit_y;
+     }
+
+    y_cordinate=unit_y*board_config.pwm_mappings[gpio_num - 1].max;
+
+   if(fabsf(y_cordinate)<60)
+     {
+     y_cordinate=0;
+     change_the_axis_mode();
+     }
+   /*
+   END : Exponential answer with OHM constant
+   */
 
     Endpoint* endpoint = get_endpoint(board_config.pwm_mappings[gpio_num - 1].endpoint);
     if (!endpoint)
