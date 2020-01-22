@@ -705,7 +705,8 @@ void handle_pulse(int gpio_num, uint32_t high_time) {
     float y_cordinate=0;
     float max_x_cordinate=(PWM_MAX_HIGH_TIME-PWM_MIN_HIGH_TIME);
     float dead_zone = max_x_cordinate*0.05f;//5% of dead PWM_DEAD_ZONE
-    /*
+    static bool need_to_update_requested_state =false;
+   /*
     @seif  find the y_cordinate
     */
 
@@ -749,12 +750,24 @@ void handle_pulse(int gpio_num, uint32_t high_time) {
      }
 
     y_cordinate=unit_y*board_config.pwm_mappings[gpio_num - 1].max;
+    #define BRAKE_ZONE     30
+    #define FREE_REEL_ZONE 120
 
-   if(fabsf(y_cordinate)<60)
+   if(fabsf(y_cordinate)<=BRAKE_ZONE)
      {
-     y_cordinate=0;
-     change_the_axis_mode();
+     axes[0]->update_requested_state((Axis::State_t)8);//AXIS_STATE_CLOSED_LOOP_CONTROL
+     need_to_update_requested_state=true;
      }
+   else if (need_to_update_requested_state)
+     {
+     axes[0]->update_requested_state((Axis::State_t)5);//AXIS_STATE_SENSORLESS_CONTROL
+     need_to_update_requested_state=false;
+     if(fabsf(y_cordinate)>FREE_REEL_ZONE)y_cordinate=FREE_REEL_ZONE;
+     }
+  if(fabsf(y_cordinate)<=FREE_REEL_ZONE)
+    {
+    y_cordinate=0;
+    }
    /*
    END : Exponential answer with OHM constant
    */

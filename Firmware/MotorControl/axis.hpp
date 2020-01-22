@@ -189,6 +189,8 @@ public:
     bool run_idle_loop();
 
     void run_state_machine_loop();
+    //seif
+    void update_requested_state(State_t requested_state);
 
     int axis_num_;
     const AxisHardwareConfig_t& hw_config_;

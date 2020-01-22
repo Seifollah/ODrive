@@ -119,12 +119,12 @@ void Axis::decode_step_dir_pins() {
     dir_pin_ = get_gpio_pin_by_pin(config_.dir_gpio_pin);
 }
 
-// @brief: Setup the watchdog reset value from the configuration watchdog timeout interval. 
+// @brief: Setup the watchdog reset value from the configuration watchdog timeout interval.
 void Axis::update_watchdog_settings() {
 
-    if(config_.watchdog_timeout <= 0.0f) { // watchdog disabled 
+    if(config_.watchdog_timeout <= 0.0f) { // watchdog disabled
         watchdog_reset_value_ = 0;
-    } else if(config_.watchdog_timeout >= UINT32_MAX / (current_meas_hz+1)) { //overflow! 
+    } else if(config_.watchdog_timeout >= UINT32_MAX / (current_meas_hz+1)) { //overflow!
         watchdog_reset_value_ = UINT32_MAX;
     } else {
         watchdog_reset_value_ = static_cast<uint32_t>(config_.watchdog_timeout * current_meas_hz);
@@ -192,9 +192,9 @@ void Axis::watchdog_feed() {
     watchdog_current_value_ = watchdog_reset_value_;
 }
 
-// @brief Check the watchdog timer for expiration. Also sets the watchdog error bit if expired. 
+// @brief Check the watchdog timer for expiration. Also sets the watchdog error bit if expired.
 bool Axis::watchdog_check() {
-    // reset value = 0 means watchdog disabled. 
+    // reset value = 0 means watchdog disabled.
     if(watchdog_reset_value_ == 0) return true;
 
     // explicit check here to ensure that we don't underflow back to UINT32_MAX
@@ -219,7 +219,7 @@ bool Axis::run_lockin_spin(const LockinConfig_t &lockin_config) {
             return false;
         return x < 1.0f;
     });
-    
+
     // Spin states
     float distance = lockin_config.ramp_distance;
     float phase = wrap_pm_pi(distance);
@@ -331,7 +331,7 @@ void Axis::run_state_machine_loop() {
 
     // arm!
     motor_.arm();
-    
+
     for (;;) {
         // Load the task chain if a specific request is pending
         if (requested_state_ != AXIS_STATE_UNDEFINED) {
@@ -405,8 +405,12 @@ void Axis::run_state_machine_loop() {
             case AXIS_STATE_SENSORLESS_CONTROL: {
                 if (!motor_.is_calibrated_ || motor_.config_.direction==0)
                         goto invalid_state_label;
-                status = run_lockin_spin(config_.sensorless_ramp); // TODO: restart if desired
-                if (status) {
+
+                  //remove the run_lockin_spin
+                  /*seif*/status = run_lockin_spin(config_.sensorless_ramp); // TODO: restart if desired
+                  //seif
+                  // status = true;
+                  if (status) {
                     // call to controller.reset() that happend when arming means that vel_setpoint
                     // is zeroed. So we make the setpoint the spinup target for smooth transition.
                     controller_.vel_setpoint_ = config_.sensorless_ramp.vel;
@@ -440,4 +444,11 @@ void Axis::run_state_machine_loop() {
         else
             memcpy(task_chain_, task_chain_ + 1, sizeof(task_chain_) - sizeof(task_chain_[0]));
     }
+}
+
+
+
+//seif
+void Axis::update_requested_state(State_t requested_state) {
+requested_state_=requested_state;
 }
